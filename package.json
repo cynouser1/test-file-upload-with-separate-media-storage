@@ -1,0 +1,21 @@
+{
+  "name": "file-upload-with-separate-media-storage",
+  "version": "1.0.0",
+  "type": "module",
+  "scripts": {
+    "dev": "concurrently \"npm --prefix apps/frontend run dev\" \"npm --prefix apps/backend run dev\" \"npm --prefix apps/media-service run dev\"",
+    "build": "npm --prefix apps/frontend run build",
+    "start": "npm run dev",
+    "start:frontend": "npm --prefix apps/frontend run dev",
+    "start:backend": "npm --prefix apps/backend run dev",
+    "start:media": "npm --prefix apps/media-service run dev"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "main": "index.js",
+  "description": "",
+  "dependencies": {
+    "concurrently": "^9.1.2"
+  }
+}
