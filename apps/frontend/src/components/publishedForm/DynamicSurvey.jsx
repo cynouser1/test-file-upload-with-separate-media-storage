@@ -11,7 +11,33 @@ import { PiMapPinLight } from "react-icons/pi";
 import { HiOutlinePlus, HiOutlineMinus } from "react-icons/hi2";
 import { toast } from 'react-toastify';
 // const DynamicSurvey = ({ formConfig = SAMPLE_SURVEY_FORM }) => {
-const DynamicSurvey = ({ form, authToken }) => {
+
+const FILE_SIZE_LIMITS = {
+  IMAGE: 2 * 1024 * 1024, // 2MB
+  AUDIO: 5 * 1024 * 1024, // 5MB
+  VIDEO: 20 * 1024 * 1024, // 20MB
+  DOCUMENT: 5 * 1024 * 1024 // 5MB
+};
+
+const getFileType = (file) => {
+  if (file.type.startsWith('image/')) return 'IMAGE';
+  if (file.type.startsWith('audio/')) return 'AUDIO';
+  if (file.type.startsWith('video/')) return 'VIDEO';
+  return 'DOCUMENT';
+};
+
+const validateFileSize = (file) => {
+  const fileType = getFileType(file);
+  const maxSize = FILE_SIZE_LIMITS[fileType] || FILE_SIZE_LIMITS.DOCUMENT;
+  return file.size <= maxSize;
+};
+
+const getMaxSizeForType = (fileType) => {
+  const type = fileType?.toUpperCase();
+  return FILE_SIZE_LIMITS[type] ? FILE_SIZE_LIMITS[type] / (1024 * 1024) + 'MB' : '5MB';
+};
+
+const DynamicSurvey = ({ form, authToken, setForm }) => {
   // const [form, setForm] = useState(SAMPLE_SURVEY_FORM);
   const [currentSubFormIndex, setCurrentSubFormIndex] = useState(0);
   const [currentStepIndex, setCurrentStepIndex] = useState(0);
@@ -52,6 +78,57 @@ const DynamicSurvey = ({ form, authToken }) => {
 
 
   console.log("formData", formData);
+
+  const handleAddSection = () => {
+    // Make deep copy of form to avoid mutating state directly
+    const formCopy = JSON.parse(JSON.stringify(form));
+    console.log("formCopy", formCopy);
+
+    const stepToDuplicate = currentStep;
+    if (!stepToDuplicate.repeatable) {
+      console.log("Current step is not repeatable.");
+      return;
+    }
+    console.log("stepToDuplicate", stepToDuplicate);    
+
+    const baseName = stepToDuplicate.name.split(' - Copy')[0]; // remove any existing copy labels
+    console.log("baseName", baseName);
+
+    // 🔢 Count existing copies
+    const copyCount = currentSubForm.steps.filter(step =>
+        step.name.startsWith(baseName + ' - Copy')
+    ).length;
+
+    const copyNumber = copyCount + 1;
+    const newName = `${baseName} - Copy ${copyNumber}`;
+
+    const newStep = {
+      ...stepToDuplicate,
+      id: `${stepToDuplicate.id}_copy_${Date.now()}`,
+      // name: `${stepToDuplicate.name} - Copy`,
+      name: newName,
+      fields: stepToDuplicate.fields.map(field => ({
+        ...field,
+        id: `${field.id}_copy_${Date.now()}`,
+        name: `${field.name}_copy_${Date.now()}`,
+      })),
+    };
+
+    // const sub = formCopy?.subForms[currentSubFormIndex];
+    // console.log("sub", sub);
+    const steps = formCopy?.subForms[currentSubFormIndex].steps;
+    const newStepIndex = currentStepIndex + 1;
+
+    if (newStepIndex < steps.length) {
+      steps.splice(newStepIndex, 0, newStep); // Insert in-between
+    } else {
+      steps.push(newStep); // Add at the end
+    }
+
+    setForm(formCopy);
+    // switch to new duplicated step
+    setCurrentStepIndex(prev => prev + 1);
+  };
 
   const validateCurrentStep = () => {
     const stepErrors = {};
@@ -112,12 +189,37 @@ const DynamicSurvey = ({ form, authToken }) => {
     if (!validateCurrentStep()) return;
 
     console.log('Form Data Submitted:', formData);
+
+    // Extract all File instances from formData
+    const filesToValidate = Object.values(formData)
+      .flatMap(value => {
+        if (value instanceof File) return [value];
+        if (Array.isArray(value) && value.every(item => item instanceof File)) return value;
+        return [];
+      });
+
+    if (filesToValidate.length > 0) {
+      const invalidFile = filesToValidate.find(file => !validateFileSize(file));
+      console.log("invalidFile", invalidFile);
+
+      if (invalidFile) {
+        const fileType = getFileType(invalidFile);
+        const maxSize = getMaxSizeForType(fileType);
+        const errorMsg = `File "${invalidFile.name}" exceeds the maximum size limit of ${maxSize}`;
+
+        console.error(errorMsg);
+        toast?.error?.(errorMsg); // Optional: If using toast notifications
+        // toast?.error?.("File size exceeds the maximum size limit"); // Optional: If using toast notifications
+        return;
+      }
+    }
+
     const response = await submitFormResponse(id, formData, authToken);
     console.log('Form Response:', response);
     if (response.success) {
       toast.success('Form submitted successfully!');
       setIsSubmitted(true);
-      setFormData({}) ; // Reset form data on success
+      setFormData({}); // Reset form data on success
     } else {
       toast.error('Error submitting form');
     }
@@ -208,6 +310,15 @@ const DynamicSurvey = ({ form, authToken }) => {
               <ChevronLeftIcon className="w-5 h-5 mr-2" />
               Previous
             </button>
+            {/* add button for repetable section  */}
+            {currentStep.repeatable && (
+              <button
+                onClick={handleAddSection}
+                className="flex items-center px-6 py-3 rounded-xl font-medium bg-gray-200 text-gray-700 hover:bg-gray-300 hover:shadow-md transform hover:-translate-y-0.5"
+              >
+                Add Section
+              </button>
+            )}
 
             {isLastStep ? (
               <button
@@ -261,17 +372,28 @@ const FieldRenderer = ({ field, value, onChange, error, counters, setCounters })
   const [location, setLocation] = useState(null);
   const [locationLoading, setLocationLoading] = useState(false);
 
-  const handleFileChange = (e, multiple = false) => {
+  const handleFileChange = (e, field, multiple = false) => {
     const files = Array.from(e.target.files);
 
+    // Validate each file
+    const invalidFiles = files.filter(file => !validateFileSize(file));
+
+    if (invalidFiles.length > 0) {
+      const fileType = getFileType(invalidFiles[0]);
+      const maxSize = getMaxSizeForType(fileType);
+      toast.error(`One or more files exceed the maximum size limit of ${maxSize}`);
+      // toast.error(`"${invalidFiles[0].name}" exceeds the maximum allowed size of ${maxSize}.`);
+      return;
+    }
     // Check file limits for multiple files
     if (multiple && field.limits) {
       if (field.limits.min && files.length < field.limits.min) {
-        alert(`Please select at least ${field.limits.min} file(s)`);
+        toast.error(`Please select at least ${field.limits.min} file`);
         return;
       }
       if (field.limits.max && files.length > field.limits.max) {
-        alert(`Please select no more than ${field.limits.max} file(s)`);
+        // toast.error(`Please select no more than ${field.limits.max} file(s)`);
+        toast.error(`You can upload up to ${field.limits.max} file${field.limits.max > 1 ? 's' : ''} only.`);
         return;
       }
     }
@@ -308,15 +430,6 @@ const FieldRenderer = ({ field, value, onChange, error, counters, setCounters })
       setLocationLoading(false);
     }
   };
-
-  // const updateCounter = (fieldName, increment) => {
-  //   const currentValue = counters[fieldName] || 0;
-  //   const newValue = Math.max(0, currentValue + increment);
-  //   console.log("Updating counter for", fieldName, "to", newValue);
-  //   console.log("currentvalue for", currentValue, "increment", increment);
-  //   setCounters(prev => ({ ...prev, [fieldName]: newValue }));
-  //   onChange(newValue);
-  // };
 
   const updateCounter = (fieldName) => {
     const currentTimestamps = counters[fieldName] || [];
@@ -568,10 +681,14 @@ const FieldRenderer = ({ field, value, onChange, error, counters, setCounters })
                   <p className="text-xs text-gray-500">
                     {field.type.toUpperCase()} files only {getFileCountText()}
                   </p>
+                  <p className="text-xs text-gray-500">
+                    {/* {field.type.toUpperCase()} Max size :  {FILE_SIZE_LIMITS[field.type] ? FILE_SIZE_LIMITS[field.type] / (1024 * 1024) + 'MB' : '50MB'} */}
+                    {field.type.toUpperCase()} Max size :  {getMaxSizeForType(field.type)}
+                  </p>
                 </div>
                 <input
                   type="file"
-                  onChange={(e) => handleFileChange(e, field.multipleFiles)}
+                  onChange={(e) => handleFileChange(e, field, field.multipleFiles)}
                   accept={acceptTypes[field.type]}
                   multiple={field.multipleFiles}
                   className="hidden"

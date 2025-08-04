@@ -122,6 +122,7 @@ export const submitFormResponse = async (formId, formData, authToken) => {
       },
       body: formDataObj,
     });
+    console.log("res", res);
     return await res.json();
   } catch (err) {
     console.error("Submit Form Response Error:", err);

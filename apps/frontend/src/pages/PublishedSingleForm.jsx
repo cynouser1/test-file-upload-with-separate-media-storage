@@ -65,7 +65,7 @@ const PublishedSingleForm = () => {
         ) : (
           // form && <DynamicSurvey form={form} authToken={authToken} />
           // form && form.length > 0 && <DynamicSurvey form={form} authToken={authToken} />
-          <DynamicSurvey form={form} authToken={authToken} />
+          <DynamicSurvey form={form} authToken={authToken} setForm={setForm} />
         )}
         {/* <DynamicSurvey form={form} authToken={authToken} /> */}
       </div>

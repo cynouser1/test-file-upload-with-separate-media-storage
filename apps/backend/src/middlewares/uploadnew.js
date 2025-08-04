@@ -36,3 +36,36 @@ const upload = multer({
 });
 
 export const uploadnew = upload.any();
+
+// Middleware to validate file size per type
+export const validateFileSizes = (req, res, next) => {
+  if (!req.files) return next();
+
+  const maxSizes = {
+    image: 2 * 1024 * 1024, // 2MB
+    audio: 5 * 1024 * 1024, // 5MB
+    video: 20 * 1024 * 1024, // 20MB
+  };
+
+  for (const file of req.files) {
+    const { mimetype, size } = file;
+
+    if (
+      (mimetype.startsWith("image/") && size > maxSizes.image) || // 2MB for images
+      (mimetype.startsWith("audio/") && size > maxSizes.audio) || // 5MB for audio
+      (mimetype.startsWith("video/") && size > maxSizes.video) // 20MB for video
+    ) {
+      // Delete the uploaded files if any fail validation
+      req.files.forEach(f => {
+        fs.unlink(f.path, () => { });
+      });
+
+      return res.status(400).json({
+        message: "File size exceeds limit",
+        success: false,
+        error: `File ${file.originalname} exceeds the size limit for its type.`,
+      });
+    }
+  }
+  next();
+};

@@ -176,6 +176,43 @@ export const getProfile = async (req, res) => {
 // };
 
 // Helper function to upload file to media service
+
+// Define size limits
+const maxFileSizes = {
+  image: 2 * 1024 * 1024, // 2MB
+  audio: 5 * 1024 * 1024, // 5MB
+  video: 20 * 1024 * 1024, // 20MB
+  default: 5 * 1024 * 1024, // fallback
+};
+
+function getFileCategory(mimetype) {
+  if (mimetype.startsWith('image/')) return 'image';
+  if (mimetype.startsWith('audio/')) return 'audio';
+  if (mimetype.startsWith('video/')) return 'video';
+  return 'default';
+}
+
+function validateFileSizesByType(files) {
+  const invalidFiles = [];
+
+  for (let file of files) {
+    const category = getFileCategory(file.mimetype);
+    const maxSize = maxFileSizes[category] || maxFileSizes.default;
+
+    if (file.size > maxSize) {
+      invalidFiles.push({
+        fieldname: file.fieldname,
+        filename: file.originalname,
+        sizeMB: (file.size / (1024 * 1024)).toFixed(2),
+        maxAllowedMB: (maxSize / (1024 * 1024)).toFixed(2),
+        mimetype: file.mimetype
+      });
+    }
+  }
+
+  return invalidFiles;
+}
+
 const uploadToMediaService = async (file) => {
   const formData = new FormDataNode();
   formData.append('media', file.buffer, {
@@ -197,6 +234,7 @@ const uploadToMediaService = async (file) => {
   return response.data.data; // Returns the file metadata
 };
 
+// submit formResponse fixed for file upload and formData handling and media in media-service
 export const submitFormResponseNew = async (req, res) => {
   const { formId } = req.params;
   const userId = req.user?._id || null;
@@ -205,6 +243,16 @@ export const submitFormResponseNew = async (req, res) => {
     // Process files if any
     const processedFiles = {};
     if (req.files && req.files.length > 0) {
+      // Validate file sizes
+      const invalidFiles = validateFileSizesByType(req.files);
+      if (invalidFiles.length > 0) {
+        return res.status(413).json({
+          success: false,
+          error: 'One or more files exceed size limits',
+          details: invalidFiles
+        });
+      }
+
       // Group files by fieldname
       const filesByField = req.files.reduce((acc, file) => {
         if (!acc[file.fieldname]) {
